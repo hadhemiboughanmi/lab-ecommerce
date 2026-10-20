@@ -1,0 +1,2 @@
+# Les scripts bash doivent garder des fins de ligne Unix, sinon les hooks échouent.
+*.sh text eol=lf
