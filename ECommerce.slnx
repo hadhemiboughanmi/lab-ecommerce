@@ -7,4 +7,8 @@
     <Project Path="src/ECommerce.ServiceDefaults/ECommerce.ServiceDefaults.csproj" />
     <Project Path="src/ECommerce.Web/ECommerce.Web.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ECommerce.Catalog.Tests/ECommerce.Catalog.Tests.csproj" />
+    <Project Path="tests/ECommerce.Ordering.Tests/ECommerce.Ordering.Tests.csproj" />
+  </Folder>
 </Solution>
