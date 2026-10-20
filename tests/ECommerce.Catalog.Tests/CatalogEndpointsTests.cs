@@ -1,15 +1,14 @@
 using System.Net;
 using System.Net.Http.Json;
-using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace ECommerce.Catalog.Tests;
 
 /// <summary>
-/// Tests d'intégration des endpoints /api/products : l'API tourne en mémoire
-/// (WebApplicationFactory), avec sa base InMemory et ses 4 produits d'amorçage.
+/// Tests d'intégration des endpoints du catalogue : l'API tourne en mémoire
+/// (WebApplicationFactory), sur un vrai PostgreSQL migré avec son seed (voir <see cref="CatalogApiFactory"/>).
 /// </summary>
-public class CatalogEndpointsTests(WebApplicationFactory<Program> factory)
-    : IClassFixture<WebApplicationFactory<Program>>
+public class CatalogEndpointsTests(CatalogApiFactory factory)
+    : IClassFixture<CatalogApiFactory>
 {
     private readonly HttpClient _client = factory.CreateClient();
 
@@ -61,10 +60,12 @@ public class CatalogEndpointsTests(WebApplicationFactory<Program> factory)
     {
         var request = new
         {
+            Sku = UniqueSku(),
             Name = $"Test Product {Guid.NewGuid():N}",
             Description = "Produit fictif de test",
             Price = 12.34m,
-            AvailableStock = 7
+            AvailableStock = 7,
+            CategoryId = AccessoriesCategoryId
         };
 
         var createResponse = await _client.PostAsJsonAsync("/api/products", request);
@@ -83,6 +84,64 @@ public class CatalogEndpointsTests(WebApplicationFactory<Program> factory)
         Assert.Equal(request.Name, read!.Name);
         Assert.Equal(request.Price, read.Price);
         Assert.Equal(request.AvailableStock, read.AvailableStock);
+        Assert.Equal(request.Sku, read.Sku);
+        Assert.Equal(request.CategoryId, read.CategoryId);
+    }
+
+    [Fact]
+    public async Task CreateProduct_DuplicateSku_ReturnsConflict()
+    {
+        // KB-MX-001 appartient au seed.
+        var request = new { Sku = "KB-MX-001", Name = "Doublon fictif", Price = 1m, AvailableStock = 1, CategoryId = PeripheralsCategoryId };
+
+        var response = await _client.PostAsJsonAsync("/api/products", request);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task CreateProduct_UnknownCategory_ReturnsBadRequest()
+    {
+        var request = new { Sku = UniqueSku(), Name = "Produit fictif", Price = 1m, AvailableStock = 1, CategoryId = 999 };
+
+        var response = await _client.PostAsJsonAsync("/api/products", request);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("Category 999 does not exist.", await response.Content.ReadFromJsonAsync<string>());
+    }
+
+    [Fact]
+    public async Task GetCategories_SeededCatalog_ReturnsCategoriesSortedByName()
+    {
+        var response = await _client.GetAsync("/api/categories");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var categories = await response.Content.ReadFromJsonAsync<List<CategoryResponse>>();
+        Assert.Equal(["Accessories", "Displays", "Peripherals"], categories!.Select(c => c.Name));
+    }
+
+    [Fact]
+    public async Task GetProducts_CategoryFilter_ReturnsOnlyProductsOfThatCategory()
+    {
+        var response = await _client.GetAsync($"/api/products?categoryId={PeripheralsCategoryId}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var products = await response.Content.ReadFromJsonAsync<List<ProductResponse>>();
+        Assert.NotNull(products);
+        Assert.All(products, p => Assert.Equal(PeripheralsCategoryId, p.CategoryId));
+        Assert.Superset(new HashSet<string> { "KB-MX-001", "MS-WL-002" }, products.Select(p => p.Sku).ToHashSet());
+    }
+
+    [Fact]
+    public async Task GetProducts_SearchFilter_MatchesNameCaseInsensitively()
+    {
+        var response = await _client.GetAsync("/api/products?search=MONITOR");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var products = await response.Content.ReadFromJsonAsync<List<ProductResponse>>();
+        Assert.NotNull(products);
+        Assert.Contains(products, p => p.Name == "4K Monitor");
+        Assert.All(products, p => Assert.Contains("monitor", p.Name, StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -95,5 +154,13 @@ public class CatalogEndpointsTests(WebApplicationFactory<Program> factory)
         Assert.Equal("Healthy", await response.Content.ReadAsStringAsync());
     }
 
-    private sealed record ProductResponse(int Id, string Name, string? Description, decimal Price, int AvailableStock);
+    // Identifiants des catégories du seed (CatalogDbContext).
+    private const int PeripheralsCategoryId = 1;
+    private const int AccessoriesCategoryId = 3;
+
+    // Le SKU est unique en base : chaque test qui crée un produit utilise le sien.
+    private static string UniqueSku() => $"TST-{Guid.NewGuid():N}";
+
+    private sealed record ProductResponse(int Id, string Sku, string Name, string? Description, decimal Price, int AvailableStock, int CategoryId);
+    private sealed record CategoryResponse(int Id, string Name);
 }
