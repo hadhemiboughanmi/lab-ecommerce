@@ -69,6 +69,11 @@ jobs:
       - name: Installer dotnet-ef
         run: dotnet tool install --global dotnet-ef --version 10.0.13
 
+      # Chaque job tourne sur un runner vierge : dotnet ef lit les métadonnées du projet
+      # avant de compiler et échoue (NETSDK1004) si le projet n'a pas été restauré.
+      - name: Restaurer le projet Catalog
+        run: dotnet restore src/ECommerce.Catalog.Api
+
       # Script idempotent (rejouable sur une base déjà migrée) : c'est l'artefact qu'un DBA relit
       # avant toute mise en production. La fabrique design-time n'ouvre aucune connexion :
       # ni base, ni secret nécessaires ici.
