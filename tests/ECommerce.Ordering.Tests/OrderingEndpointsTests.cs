@@ -26,7 +26,7 @@ public class OrderingEndpointsTests(OrderingApiFactory factory) : IClassFixture<
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         var order = await response.Content.ReadFromJsonAsync<OrderResponse>();
         Assert.NotNull(order);
-        Assert.Equal(3 * 10.00m, order.Total); // 40.00
+        Assert.Equal(3 * 10.00m + 4 * 2.50m, order.Total); // 40.00
         Assert.Equal("Confirmed", order.Status);
         // Nom et prix sont copiés depuis Catalog au moment de la commande.
         var keyboardLine = Assert.Single(order.Items, i => i.ProductId == FakeCatalogHandler.Keyboard.Id);
