@@ -1,0 +1,27 @@
+# Ce qui N'EST PAS envoyé au moteur Docker comme contexte de build (contexte = racine du dépôt).
+
+# Crucial : bin/ et obj/ contiennent le restore fait sur le poste (chemins Windows vers le cache
+# NuGet de l'hôte). Copiés dans l'image, ils écraseraient le restore Linux du conteneur et
+# `dotnet publish --no-restore` échouerait (NETSDK1064 : package introuvable).
+**/bin/
+**/obj/
+
+# Secrets et configuration locale : ils ne doivent jamais quitter le poste, même vers le moteur Docker.
+.env
+**/.env.*
+!.env.example
+**/*.pem
+**/*.key
+**/*.pfx
+**/appsettings.*.local.json
+.claude/
+
+# Inutile aux images, et invaliderait le cache à chaque modification.
+.git/
+.github/
+tests/
+**/TestResults/
+**/.vs/
+**/.vscode/
+**/.idea/
+**/*.user
