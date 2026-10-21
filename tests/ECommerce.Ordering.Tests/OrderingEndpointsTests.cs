@@ -106,6 +106,53 @@ public class OrderingEndpointsTests(OrderingApiFactory factory) : IClassFixture<
         Assert.Equal(["unknown_product"], reasons);
     }
 
+    [Theory]
+    [InlineData(0, "invalid_quantity")]
+    [InlineData(-1, "empty_order")]   // -1 : convention du test pour « aucune ligne »
+    public async Task CreateOrder_InvalidRequest_IncrementsOrdersRejectedWithReason(int quantity, string expectedReason)
+    {
+        var reasons = new List<string?>();
+        using var listener = Listen("ecommerce.orders.rejected", (_, tags) =>
+        {
+            foreach (var tag in tags)
+            {
+                if (tag.Key == "reason") lock (reasons) reasons.Add(tag.Value as string);
+            }
+        });
+        List<OrderLine> lines = quantity < 0 ? [] : [new OrderLine(FakeCatalogHandler.Keyboard.Id, quantity)];
+
+        var response = await _client.PostAsJsonAsync("/api/orders", new CreateOrderRequest(Customer, lines));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal([expectedReason], reasons);
+    }
+
+    [Fact]
+    public async Task CreateOrder_Confirmed_RecordsOrderAmount()
+    {
+        var amounts = new List<double>();
+        using var listener = new MeterListener
+        {
+            InstrumentPublished = (instrument, l) =>
+            {
+                if (instrument.Meter.Name == OrderingTelemetry.Name && instrument.Name == "ecommerce.order.amount")
+                    l.EnableMeasurementEvents(instrument);
+            }
+        };
+        listener.SetMeasurementEventCallback<double>((_, value, _, _) => { lock (amounts) amounts.Add(value); });
+        listener.Start();
+        var request = new CreateOrderRequest(Customer,
+        [
+            new OrderLine(FakeCatalogHandler.Keyboard.Id, 3),
+            new OrderLine(FakeCatalogHandler.Mouse.Id, 4),
+        ]);
+
+        var response = await _client.PostAsJsonAsync("/api/orders", request);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal([40.00], amounts);   // 3 × 10,00 + 4 × 2,50
+    }
+
     private delegate void Measurement(long value, ReadOnlySpan<KeyValuePair<string, object?>> tags);
 
     private static MeterListener Listen(string instrumentName, Measurement onMeasurement)
