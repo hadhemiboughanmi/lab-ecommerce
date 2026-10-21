@@ -71,11 +71,14 @@ KEY='BEGIN (RSA |OPENSSH |EC |DSA )?PRIVATE KEY'
 #   - valeurs booléennes ou vides, par exemple le réglage Kubernetes automountServiceAccountToken
 #     mis à false (il retire aux pods leur jeton d'accès à l'API).
 PLACEHOLDER='\$\{[A-Za-z_]+\}|<[a-z-]+>|changeme|example'
-BOOLEAN="(password|passwd|pwd|secret|token|api[_-]?key|connectionstring)[\"']?[[:space:]]*[:=][[:space:]]*[\"']?(true|false|null|yes|no|on|off)\\b[\"']?"
+# Le booléen doit être suivi d'un délimiteur (guillemet, espace, , ; # } ] ou fin de ligne) :
+# une valeur comme « on-xyz123 » commence par « on » mais n'est PAS un booléen, et reste analysée.
+BOOLEAN="(password|passwd|pwd|secret|token|api[_-]?key|connectionstring)[\"']?[[:space:]]*[:=][[:space:]]*[\"']?(true|false|null|yes|no|on|off)[\"']?([[:space:],;#}]|\\]|\$)"
 if ! command -v gitleaks >/dev/null 2>&1 || $scan_worktree; then
   scan="${TMPDIR:-/tmp}/secret-scan.$$"
   # Nettoyage du contenu seul (colonne 2), le nom de fichier (colonne 1) reste intact.
-  cleaned="$(paste <(cut -f1 "$scan") <(cut -f2- "$scan" | sed -E "s/$BOOLEAN//Ig; s/$PLACEHOLDER//Ig"))"
+  # \3 : le délimiteur qui suit le booléen est conservé.
+  cleaned="$(paste <(cut -f1 "$scan") <(cut -f2- "$scan" | sed -E "s/$BOOLEAN/\\3/Ig; s/$PLACEHOLDER//Ig"))"
   hits="$(printf '%s\n' "$cleaned" | grep -iE "$RE|$KEY" | cut -f1 | sort -u)"
   [ -n "$hits" ] && found="$found"$'\n'"$hits"
 fi

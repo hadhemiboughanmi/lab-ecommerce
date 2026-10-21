@@ -2,8 +2,9 @@
 # Hook PreToolUse (Bash) destiné au sous-agent k8s-debug-pod — LECTURE SEULE.
 #
 # ÉTAT : NON ACTIF. Déclaré dans le frontmatter du sous-agent, il n'est pas appliqué par Claude
-# Code (testé le 2026-10-21). Le script lui-même est testé (24 cas) et prêt à être branché dans
-# .claude/settings.json, filtré sur le sous-agent, quand un humain le décidera.
+# Code (testé le 2026-10-21). Le script lui-même est testé (24 cas), mais la revue de la PR #11
+# y a relevé des contournements possibles : à durcir et à re-tester AVANT de le brancher dans
+# .claude/settings.json (filtré sur le sous-agent), ce qui reste une décision humaine.
 #
 # Le sous-agent a besoin de Bash pour lancer kubectl, mais Bash permet tout. Sans ce hook, sa
 # « lecture seule » ne serait qu'une consigne. Ici, toute commande est découpée en segments
