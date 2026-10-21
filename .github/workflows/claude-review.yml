@@ -7,10 +7,14 @@
 #
 # Sécurité — pourquoi l'agent n'a AUCUN outil :
 # le diff est écrit par l'auteur de la PR. Un diff piégé (prompt injection) pourrait demander
-# à un agent qui sait lire des fichiers d'aller lire /proc/self/environ, où se trouve
-# ANTHROPIC_API_KEY, et de la recopier dans le commentaire public de la PR — GitHub masque les
+# à un agent qui sait lire des fichiers d'aller lire /proc/self/environ, où se trouve le secret
+# d'authentification, et de le recopier dans le commentaire public de la PR — GitHub masque les
 # secrets dans les logs, pas dans les commentaires. Le contenu est donc passé sur l'entrée
 # standard, et tous les outils sont désactivés.
+#
+# Authentification, au choix (un seul suffit) :
+#   - CLAUDE_CODE_OAUTH_TOKEN, le jeton d'un abonnement Claude (`claude setup-token`) ;
+#   - ANTHROPIC_API_KEY, une clé d'API facturée à l'usage.
 name: Revue Claude
 
 on:
@@ -28,14 +32,14 @@ jobs:
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     env:
-      # Sans clé configurée, les étapes de revue sont sautées au lieu d'échouer.
-      HAS_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+      # Sans secret d'authentification, les étapes de revue sont sautées au lieu d'échouer.
+      HAS_KEY: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' || secrets.ANTHROPIC_API_KEY != '' }}
       BASE_REF: ${{ github.base_ref }}
     steps:
       - name: Signaler l'absence de clé
         if: env.HAS_KEY != 'true'
         run: |
-          echo "::notice::Secret ANTHROPIC_API_KEY absent : revue Claude sautée."
+          echo "::notice::Revue Claude sautée (ni CLAUDE_CODE_OAUTH_TOKEN ni ANTHROPIC_API_KEY configuré)."
 
       - name: Récupérer le code (historique complet, pour le diff)
         if: env.HAS_KEY == 'true'
@@ -57,6 +61,7 @@ jobs:
       - name: Revue du diff
         if: env.HAS_KEY == 'true'
         env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           # Diff borné à 200 Ko : coût et durée maîtrisés.
@@ -69,6 +74,7 @@ jobs:
       - name: Revue du SQL des migrations (si une migration a changé)
         if: env.HAS_KEY == 'true'
         env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           if git diff --name-only "origin/$BASE_REF...HEAD" | grep -q '/Migrations/'; then
