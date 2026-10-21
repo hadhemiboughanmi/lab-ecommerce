@@ -1,0 +1,66 @@
+# Catalog : Deployment + Service, branché sur PostgreSQL.
+#
+# La chaîne de connexion est COMPOSÉE dans le pod : le mot de passe vient du Secret catalog-db
+# (variable CATALOG_DB_PASSWORD), puis Kubernetes l'interpole dans ConnectionStrings__catalogdb
+# grâce à la syntaxe $(VAR). Aucun mot de passe dans ce fichier.
+#
+# Readiness = /health, qui INCLUT la base (contrôle ajouté par AddNpgsqlDbContext) : base
+# injoignable => pod retiré du trafic. Liveness = /alive, qui ne l'inclut PAS : une panne de base
+# ne doit pas faire redémarrer en boucle un service sain.
+#
+# Une seule réplique, sans autoscaler : Catalog applique ses migrations au démarrage
+# (Development). Avec plusieurs réplicas, il faudrait un Job de migration revu, lancé avant.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog
+  namespace: ecommerce
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: catalog }
+  template:
+    metadata:
+      labels: { app: catalog }
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: catalog
+          image: ecommerce-catalog:dev
+          imagePullPolicy: IfNotPresent        # image importée dans k3d, pas dans un registre
+          ports:
+            - containerPort: 8080
+          env:
+            - name: ASPNETCORE_ENVIRONMENT
+              value: Development                # cluster de dev : /health, /alive et migrations au démarrage
+            - name: CATALOG_DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: catalog-db, key: password }
+            - name: ConnectionStrings__catalogdb
+              value: "Host=postgres;Port=5432;Database=catalogdb;Username=catalog_app;Password=$(CATALOG_DB_PASSWORD)"
+          readinessProbe:
+            httpGet: { path: /health, port: 8080 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /alive, port: 8080 }
+            initialDelaySeconds: 15
+            periodSeconds: 15
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalog
+  namespace: ecommerce
+spec:
+  selector: { app: catalog }
+  ports:
+    - port: 8080
+      targetPort: 8080

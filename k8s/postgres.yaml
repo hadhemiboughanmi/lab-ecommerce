@@ -1,0 +1,80 @@
+# PostgreSQL du catalogue : StatefulSet à une réplique, volume persistant (local-path de k3s).
+#
+# Le mot de passe N'EST PAS dans ce fichier. Il est dans le Secret `catalog-db`, créé par
+# l'humain, hors session, avant d'appliquer les manifestes :
+#   kubectl -n ecommerce create secret generic catalog-db --from-literal=password="$(openssl rand -hex 24)"
+# Attention : POSTGRES_PASSWORD n'est lu qu'à la PREMIÈRE initialisation du volume. Changer le
+# Secret ensuite ne change pas le mot de passe en base.
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres                    # DNS interne : postgres.ecommerce.svc
+  namespace: ecommerce
+spec:
+  clusterIP: None                   # headless : adresse stable du pod du StatefulSet
+  selector: { app: postgres }
+  ports:
+    - port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: ecommerce
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels: { app: postgres }
+  template:
+    metadata:
+      labels: { app: postgres }
+    spec:
+      automountServiceAccountToken: false   # la base n'a pas à parler à l'API Kubernetes
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70               # utilisateur postgres de l'image alpine
+        runAsGroup: 70
+        fsGroup: 70                 # le volume monté appartient au groupe postgres
+      containers:
+        - name: postgres
+          image: postgres:17-alpine  # version épinglée, la même que compose et Testcontainers
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: catalogdb
+            - name: POSTGRES_USER
+              value: catalog_app
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: catalog-db, key: password }
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata   # sous-dossier : évite le « lost+found » à la racine du volume
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "catalog_app", "-d", "catalogdb"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "catalog_app", "-d", "catalogdb"]
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi

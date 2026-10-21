@@ -1,0 +1,55 @@
+# Gateway (YARP) : Deployment + Service. Interne au cluster : seul le frontend est exposé par
+# l'ingress. Les routes viennent d'appsettings.json, les adresses des services d'ici.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: ecommerce
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: gateway }
+  template:
+    metadata:
+      labels: { app: gateway }
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: gateway
+          image: ecommerce-gateway:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          env:
+            - name: ASPNETCORE_ENVIRONMENT
+              value: Development
+            - name: services__catalog__http__0
+              value: http://catalog:8080
+            - name: services__ordering__http__0
+              value: http://ordering:8080
+          readinessProbe:
+            httpGet: { path: /health, port: 8080 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /alive, port: 8080 }
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  namespace: ecommerce
+spec:
+  selector: { app: gateway }
+  ports:
+    - port: 8080
+      targetPort: 8080
