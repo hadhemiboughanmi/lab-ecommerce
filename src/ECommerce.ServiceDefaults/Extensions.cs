@@ -57,11 +57,15 @@ public static class Extensions
             {
                 metrics.AddAspNetCoreInstrumentation()
                     .AddHttpClientInstrumentation()
-                    .AddRuntimeInstrumentation();
+                    .AddRuntimeInstrumentation()
+                    // Business meters of the application (e.g. "ECommerce.Ordering").
+                    .AddMeter("ECommerce.*");
             })
             .WithTracing(tracing =>
             {
                 tracing.AddSource(builder.Environment.ApplicationName)
+                    // Business spans of the application (e.g. "ECommerce.Ordering").
+                    .AddSource("ECommerce.*")
                     .AddAspNetCoreInstrumentation(tracing =>
                         // Exclude health check requests from tracing
                         tracing.Filter = context =>

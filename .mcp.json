@@ -7,6 +7,10 @@
     "catalogdb": {
       "command": "cmd",
       "args": ["/c", "dbhub", "--transport", "stdio", "--config", "dbhub.toml"]
+    },
+    "aspire": {
+      "command": "cmd",
+      "args": ["/c", "aspire", "agent", "mcp", "--nologo"]
     }
   }
 }

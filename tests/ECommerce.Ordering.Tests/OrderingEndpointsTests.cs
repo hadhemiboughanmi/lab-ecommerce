@@ -1,5 +1,7 @@
+using System.Diagnostics.Metrics;
 using System.Net;
 using System.Net.Http.Json;
+using ECommerce.Ordering.Api.Diagnostics;
 
 namespace ECommerce.Ordering.Tests;
 
@@ -67,6 +69,105 @@ public class OrderingEndpointsTests(OrderingApiFactory factory) : IClassFixture<
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Equal("Product 999 does not exist.", await response.Content.ReadFromJsonAsync<string>());
+    }
+
+    [Fact]
+    public async Task CreateOrder_Confirmed_IncrementsOrdersCreatedMetric()
+    {
+        // On écoute la métrique métier comme le ferait un collecteur OpenTelemetry. Les tests
+        // d'une même classe s'exécutent en série : seul ce test émet pendant l'écoute.
+        long created = 0;
+        using var listener = Listen("ecommerce.orders.created",
+            (value, _) => Interlocked.Add(ref created, value));
+        var request = new CreateOrderRequest(Customer, [new OrderLine(FakeCatalogHandler.Keyboard.Id, 1)]);
+
+        var response = await _client.PostAsJsonAsync("/api/orders", request);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal(1, Interlocked.Read(ref created));
+    }
+
+    [Fact]
+    public async Task CreateOrder_UnknownProduct_IncrementsOrdersRejectedWithReason()
+    {
+        var reasons = new List<string?>();
+        using var listener = Listen("ecommerce.orders.rejected", (_, tags) =>
+        {
+            foreach (var tag in tags)
+            {
+                if (tag.Key == "reason") lock (reasons) reasons.Add(tag.Value as string);
+            }
+        });
+        var request = new CreateOrderRequest(Customer, [new OrderLine(999, 1)]);
+
+        var response = await _client.PostAsJsonAsync("/api/orders", request);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(["unknown_product"], reasons);
+    }
+
+    [Theory]
+    [InlineData(0, "invalid_quantity")]
+    [InlineData(-1, "empty_order")]   // -1 : convention du test pour « aucune ligne »
+    public async Task CreateOrder_InvalidRequest_IncrementsOrdersRejectedWithReason(int quantity, string expectedReason)
+    {
+        var reasons = new List<string?>();
+        using var listener = Listen("ecommerce.orders.rejected", (_, tags) =>
+        {
+            foreach (var tag in tags)
+            {
+                if (tag.Key == "reason") lock (reasons) reasons.Add(tag.Value as string);
+            }
+        });
+        List<OrderLine> lines = quantity < 0 ? [] : [new OrderLine(FakeCatalogHandler.Keyboard.Id, quantity)];
+
+        var response = await _client.PostAsJsonAsync("/api/orders", new CreateOrderRequest(Customer, lines));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal([expectedReason], reasons);
+    }
+
+    [Fact]
+    public async Task CreateOrder_Confirmed_RecordsOrderAmount()
+    {
+        var amounts = new List<double>();
+        using var listener = new MeterListener
+        {
+            InstrumentPublished = (instrument, l) =>
+            {
+                if (instrument.Meter.Name == OrderingTelemetry.Name && instrument.Name == "ecommerce.order.amount")
+                    l.EnableMeasurementEvents(instrument);
+            }
+        };
+        listener.SetMeasurementEventCallback<double>((_, value, _, _) => { lock (amounts) amounts.Add(value); });
+        listener.Start();
+        var request = new CreateOrderRequest(Customer,
+        [
+            new OrderLine(FakeCatalogHandler.Keyboard.Id, 3),
+            new OrderLine(FakeCatalogHandler.Mouse.Id, 4),
+        ]);
+
+        var response = await _client.PostAsJsonAsync("/api/orders", request);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal([40.00], amounts);   // 3 × 10,00 + 4 × 2,50
+    }
+
+    private delegate void Measurement(long value, ReadOnlySpan<KeyValuePair<string, object?>> tags);
+
+    private static MeterListener Listen(string instrumentName, Measurement onMeasurement)
+    {
+        var listener = new MeterListener
+        {
+            InstrumentPublished = (instrument, l) =>
+            {
+                if (instrument.Meter.Name == OrderingTelemetry.Name && instrument.Name == instrumentName)
+                    l.EnableMeasurementEvents(instrument);
+            }
+        };
+        listener.SetMeasurementEventCallback<long>((_, value, tags, _) => onMeasurement(value, tags));
+        listener.Start();
+        return listener;
     }
 
     private sealed record CreateOrderRequest(string Customer, List<OrderLine> Items);
