@@ -47,7 +47,7 @@ jobs:
     environment: staging
     steps:
       - name: Récupérer le commit validé par la CI
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ github.event.workflow_run.head_sha }}   # exactement celui qui a passé la CI
 
@@ -76,7 +76,7 @@ jobs:
           [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::SHA complet attendu (40 caractères hexadécimaux)"; exit 1; }
 
       - name: Récupérer le code (historique complet)
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
 
