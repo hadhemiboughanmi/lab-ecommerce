@@ -20,7 +20,7 @@ public class CatalogDbContext(DbContextOptions<CatalogDbContext> options) : DbCo
         modelBuilder.Entity<Product>(entity =>
         {
             entity.HasKey(p => p.Id);
-            entity.Property(p => p.Sku).HasMaxLength(40).IsRequired();
+            entity.Property(p => p.Sku).HasMaxLength(64).IsRequired();
             entity.Property(p => p.Name).HasMaxLength(200).IsRequired();
             entity.Property(p => p.Description).HasMaxLength(2000);
             entity.Property(p => p.Price).HasPrecision(18, 2);
