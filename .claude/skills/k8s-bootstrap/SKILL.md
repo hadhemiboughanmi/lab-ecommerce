@@ -20,7 +20,9 @@ les fichiers.
    `kubectl -n ecommerce create secret generic catalog-db --from-literal=password="$(openssl rand -hex 24)"`.
    Ne jamais générer, afficher ni lire la valeur.
 5. **Base** — `kubectl apply -f k8s/postgres.yaml`, puis `kubectl -n ecommerce rollout status statefulset/postgres`.
-6. **Services** — `kubectl apply -f k8s/` puis `rollout status` de chaque Deployment.
+6. **Services** — `kubectl apply -f k8s/catalog.yaml -f k8s/ordering.yaml -f k8s/gateway.yaml -f k8s/web.yaml -f k8s/ingress.yaml`
+   puis `rollout status` de chaque Deployment. **Pas** `kubectl apply -f k8s/` : le dossier contient
+   aussi `k3d-cluster.yaml`, qui est la configuration de k3d et non une ressource Kubernetes.
 7. **Vérifier** — `curl -s http://ecommerce.localhost:8081/products` et la readiness de Catalog.
 8. **Rendre compte** — tableau ressource | état | preuve (commande et sortie).
 
