@@ -44,6 +44,9 @@ spec:
             httpGet: { path: /health, port: 8080 }
             initialDelaySeconds: 10
             periodSeconds: 10
+            # /health inclut le contrôle de la base, qui peut prendre ~2 s : avec le délai par
+            # défaut (1 s), une base simplement LENTE retirerait Catalog du trafic à tort.
+            timeoutSeconds: 3
           livenessProbe:
             httpGet: { path: /alive, port: 8080 }
             initialDelaySeconds: 15
