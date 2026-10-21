@@ -1,0 +1,110 @@
+# CD — déploiement continu, en deux étages :
+#   1) staging    : automatique après une CI verte sur main ;
+#   2) production : UNIQUEMENT sur déclenchement manuel (Actions → CD → Run workflow), pour un
+#      commit déjà déployé avec succès en staging.
+#
+# Pourquoi un déclenchement manuel et pas la règle « Required reviewers » de l'environnement
+# production : ce dépôt est privé sur un compte GitHub gratuit, et GitHub y refuse cette règle
+# (HTTP 422). Le gate est donc l'action volontaire d'une personne ayant les droits d'écriture —
+# plus faible qu'une règle de la forge, qui désigne nommément les relecteurs. Avec GitHub Pro ou
+# un dépôt public, on rétablira la règle sur l'environnement production.
+#
+# Les commandes de déploiement réelles (Helm, Lab 09) remplaceront les `echo` ci-dessous.
+name: CD
+
+on:
+  workflow_run:
+    workflows: ["CI"]          # doit correspondre au `name:` de ci.yml
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Commit de main à déployer en production (SHA complet, déjà déployé en staging)"
+        required: true
+        type: string
+
+# Moindre privilège : lire le code, rien d'autre. Le job production ajoute la lecture des runs.
+permissions:
+  contents: read
+
+# Un seul déploiement à la fois, et on n'interrompt jamais un déploiement en cours.
+concurrency:
+  group: cd-main
+  cancel-in-progress: false
+
+jobs:
+  deploy-staging:
+    name: Déployer en staging
+    # CI verte, déclenchée par un push (et non par une PR), dans ce dépôt (et non un fork) :
+    # le filtre `branches` ne porte que sur le NOM de la branche du run de CI.
+    if: >-
+      github.event_name == 'workflow_run'
+      && github.event.workflow_run.conclusion == 'success'
+      && github.event.workflow_run.event == 'push'
+      && github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Récupérer le commit validé par la CI
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}   # exactement celui qui a passé la CI
+
+      - name: Déployer en staging
+        env:
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          echo "Déploiement staging du commit $SHA"
+          # helm upgrade --install ecommerce helm/ecommerce -f helm/ecommerce/values-staging.yaml --atomic
+          # Identifiants du cluster : secrets.KUBECONFIG_STAGING (secret d'environnement), jamais en clair.
+
+  deploy-production:
+    name: Déployer en production (gate manuel)
+    # Seulement lancé à la main, depuis main.
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      actions: read            # pour vérifier que ce commit est passé en staging
+    env:
+      SHA: ${{ inputs.sha }}   # passé par variable, jamais interpolé dans le script (injection)
+    steps:
+      - name: Vérifier le format du commit
+        run: |
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::SHA complet attendu (40 caractères hexadécimaux)"; exit 1; }
+
+      - name: Récupérer le code (historique complet)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Vérifier que le commit appartient à main
+        run: |
+          git merge-base --is-ancestor "$SHA" origin/main \
+            || { echo "::error::Le commit $SHA n'est pas sur main"; exit 1; }
+
+      - name: Vérifier que le commit a été déployé en staging
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # On vérifie le JOB de staging, pas seulement le run : un run CD dont les jobs ont tous
+        # été sautés (CI rouge) peut être marqué « success ».
+        run: |
+          for run in $(gh api "repos/${{ github.repository }}/actions/runs?head_sha=$SHA&event=workflow_run" \
+                         --jq '.workflow_runs[] | select(.name == "CD") | .id'); do
+            ok=$(gh api "repos/${{ github.repository }}/actions/runs/$run/jobs" \
+                   --jq '[.jobs[] | select(.name == "Déployer en staging" and .conclusion == "success")] | length')
+            [ "$ok" -gt 0 ] && { echo "Staging réussi pour $SHA (run $run)"; exit 0; }
+          done
+          echo "::error::Aucun déploiement staging réussi pour $SHA"
+          exit 1
+
+      - name: Se placer sur le commit à déployer
+        run: git checkout --quiet "$SHA"
+
+      - name: Déployer en production
+        run: |
+          echo "Déploiement production du commit $SHA, lancé manuellement par $GITHUB_ACTOR"
+          # helm upgrade --install ecommerce helm/ecommerce -f helm/ecommerce/values-prod.yaml --atomic
+          # Identifiants du cluster : secrets.KUBECONFIG_PRODUCTION (secret d'environnement), jamais en clair.
