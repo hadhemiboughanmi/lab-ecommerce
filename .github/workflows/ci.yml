@@ -1,0 +1,82 @@
+# CI — intégration continue de l'ecommerce-app (.NET 10).
+# Déclenchée à chaque push et chaque Pull Request vers main. Ne déploie JAMAIS rien :
+# ce sera le rôle de cd.yml, derrière un gate humain.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Moindre privilège : la CI lit le code, elle n'écrit nulle part. Aucun job n'ajoute de droit.
+permissions:
+  contents: read
+
+# Un nouveau push sur une PR annule le run précédent de cette PR ;
+# un run sur main n'est jamais interrompu.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build-test:
+    name: Build & tests (.NET 10)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+
+      - name: Installer le SDK .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restaurer les dépendances
+        run: dotnet restore ECommerce.slnx
+
+      - name: Compiler (Release)
+        run: dotnet build ECommerce.slnx --configuration Release --no-restore
+
+      # Les tests du catalogue démarrent un vrai PostgreSQL avec Testcontainers :
+      # Docker est présent sur les runners ubuntu-latest, rien à configurer.
+      - name: Exécuter les tests
+        run: dotnet test ECommerce.slnx --configuration Release --no-build --logger "trx;LogFileName=results.trx"
+
+      # Publiés même si les tests échouent : c'est justement là qu'on en a besoin.
+      # Un artefact plutôt qu'une action de rapport tierce, qui exigerait checks: write.
+      - name: Publier les résultats de tests
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: "**/TestResults/*.trx"
+
+  migrations:
+    name: Script SQL des migrations du catalogue
+    runs-on: ubuntu-latest
+    needs: build-test
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+
+      - name: Installer le SDK .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      # Version épinglée, la même qu'en local : un autre dotnet-ef pourrait produire un autre SQL.
+      - name: Installer dotnet-ef
+        run: dotnet tool install --global dotnet-ef --version 10.0.13
+
+      # Script idempotent (rejouable sur une base déjà migrée) : c'est l'artefact qu'un DBA relit
+      # avant toute mise en production. La fabrique design-time n'ouvre aucune connexion :
+      # ni base, ni secret nécessaires ici.
+      - name: Générer le script SQL idempotent
+        run: dotnet ef migrations script --idempotent --project src/ECommerce.Catalog.Api -o catalog-migrations.sql
+
+      - name: Publier le script SQL
+        uses: actions/upload-artifact@v4
+        with:
+          name: catalog-migrations
+          path: catalog-migrations.sql
