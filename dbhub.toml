@@ -1,0 +1,21 @@
+# DBHub — serveur MCP base de données, configuré en LECTURE SEULE (lab 04).
+#
+# Deux barrières indépendantes :
+#   1. le rôle PostgreSQL catalog_ro ne peut physiquement pas écrire (sql/create-readonly-role.sql) ;
+#   2. l'outil execute_sql refuse lui-même tout ce qui n'est pas SELECT / EXPLAIN / SHOW.
+# Le mot de passe n'est pas ici : ${CATALOG_RO_PASSWORD} est lu dans l'environnement.
+
+[[sources]]
+id = "catalog"
+description = "Base catalogdb de l'ecommerce-app — lab local, données synthétiques uniquement"
+dsn = "postgres://catalog_ro:${CATALOG_RO_PASSWORD}@localhost:${CATALOG_DB_PORT}/catalogdb?sslmode=disable"
+
+[[tools]]
+name = "execute_sql"
+source = "catalog"
+readonly = true          # SELECT, SHOW, DESCRIBE, EXPLAIN uniquement
+max_rows = 200           # une réponse de l'agent ne doit pas avaler la table entière
+
+[[tools]]
+name = "search_objects"  # exploration du schéma : tables, colonnes, index
+source = "catalog"
