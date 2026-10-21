@@ -66,8 +66,11 @@ RE="(password|passwd|pwd|secret|token|api[_-]?key|connectionstring)[\"']?[[:spac
 KEY='BEGIN (RSA |OPENSSH |EC |DSA )?PRIVATE KEY'
 # Valeurs factices courantes : ${VAR}, <placeholder>, changeme, example.
 PLACEHOLDER='\$\{[A-Za-z_]+\}|<[a-z-]+>|changeme|example'
+# Une valeur booléenne ou vide n'est jamais un secret : par exemple le réglage Kubernetes
+# automountServiceAccountToken, mis à false pour retirer aux pods leur jeton d'accès à l'API.
+BOOLEAN="(password|passwd|pwd|secret|token|api[_-]?key|connectionstring)[\"']?[[:space:]]*[:=][[:space:]]*[\"']?(true|false|null|yes|no|on|off)[\"']?([[:space:],#]|\$)"
 if ! command -v gitleaks >/dev/null 2>&1 || $scan_worktree; then
-  hits="$(grep -iE "$RE|$KEY" "${TMPDIR:-/tmp}/secret-scan.$$" | grep -viE "$PLACEHOLDER" | cut -f1 | sort -u)"
+  hits="$(grep -iE "$RE|$KEY" "${TMPDIR:-/tmp}/secret-scan.$$" | grep -viE "$PLACEHOLDER" | grep -viE "$BOOLEAN" | cut -f1 | sort -u)"
   [ -n "$hits" ] && found="$found"$'\n'"$hits"
 fi
 
