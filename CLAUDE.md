@@ -16,7 +16,7 @@ dotnet dev-certs https --trust                   # one-time; otherwise the dashb
 
 - Docker is not required. Ports change on every run, so read them from the AppHost output or the dashboard.
 - There are no test projects yet. If you add one, register it in `ECommerce.slnx`.
-- A clean build currently reports NuGet vulnerability warnings (NU1902/NU1903) for `MessagePack` (pulled in by AppHost) and `Microsoft.OpenApi` 2.0.0 (Catalog and Ordering). These are known warnings, not build errors.
+- A clean build currently reports NuGet vulnerability warnings (NU1902/NU1903) for `MessagePack` (pulled in by AppHost). These are known warnings, not build errors. `Microsoft.OpenApi` is pinned to 2.7.5 in Catalog and Ordering to fix CVE-2026-49451.
 
 ## Conventions
 - Les services s'appellent par nom (https+http://catalog) : JAMAIS d'URL en dur.
