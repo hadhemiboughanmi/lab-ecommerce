@@ -8,8 +8,19 @@
 # protection qui n'existe pas.
 set -uo pipefail
 
+input="$(cat)"
+
+# Sans jq, la commande ne peut pas être lue : si elle ressemble à un build, on le DIT.
+if ! command -v jq >/dev/null 2>&1; then
+  if printf '%s' "$input" | grep -q 'docker build'; then
+    echo "Image NON scannée : jq introuvable, la commande de build n'a pas pu être lue. Installe jq (winget install jqlang.jq)." >&2
+    exit 2
+  fi
+  exit 0
+fi
+
 # tr -d '\r' : sous Windows, jq termine sa sortie par \r\n.
-cmd="$(jq -r '.tool_input.command // empty' 2>/dev/null | tr -d '\r')" || exit 0
+cmd="$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null | tr -d '\r')" || exit 0
 printf '%s' "$cmd" | grep -q 'docker build' || exit 0
 
 image="$(printf '%s' "$cmd" | sed -nE 's/.*(-t|--tag)[ =]+([^ ]+).*/\2/p' | head -1)"

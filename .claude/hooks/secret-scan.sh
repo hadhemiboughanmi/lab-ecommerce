@@ -60,6 +60,8 @@ fi
 #    et couvre toujours les fichiers que la commande va indexer elle-même.
 #    Une valeur qui commence par $ ou ? est une RÉFÉRENCE, pas un secret : ${VAR}, $(commande),
 #    ou le ${VAR:?message} de compose (qui exige la variable).
+#    LIMITE CONNUE : un vrai mot de passe qui commencerait par $ ou ? n'est plus détecté ici.
+#    gitleaks (utilisé s'il est installé) n'a pas cette limite.
 RE="(password|passwd|pwd|secret|token|api[_-]?key|connectionstring)[\"']?[[:space:]]*[:=][[:space:]]*[\"']?[^\"'[:space:],;{}\$?][^\"'[:space:],;{}]{3,}"
 KEY='BEGIN (RSA |OPENSSH |EC |DSA )?PRIVATE KEY'
 # Valeurs factices courantes : ${VAR}, <placeholder>, changeme, example.
