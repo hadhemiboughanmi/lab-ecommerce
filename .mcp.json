@@ -3,6 +3,10 @@
     "context7": {
       "command": "cmd",
       "args": ["/c", "context7-mcp"]
+    },
+    "catalogdb": {
+      "command": "cmd",
+      "args": ["/c", "dbhub", "--transport", "stdio", "--config", "dbhub.toml"]
     }
   }
 }
