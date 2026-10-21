@@ -1,0 +1,17 @@
+# Cluster k3d local de l'ecommerce-app : 1 serveur + 2 agents, ingress Traefik exposé sur le
+# port 8081 de l'hôte (8080 est pris par la pile docker compose du Lab 07).
+# Usage : k3d cluster create --config k8s/k3d-cluster.yaml
+#
+# Pas de registre local : les images sont importées directement dans les nœuds avec
+#   k3d image import ecommerce-{catalog,ordering,gateway,web}:dev -c ecom-dev
+# (un registre publié sur toutes les interfaces du poste serait inutile ici, et exposé).
+apiVersion: k3d.io/v1alpha5
+kind: Simple
+metadata:
+  name: ecom-dev
+servers: 1
+agents: 2
+ports:
+  - port: 8081:80             # hôte 8081 -> loadbalancer -> ingress Traefik
+    nodeFilters:
+      - loadbalancer
