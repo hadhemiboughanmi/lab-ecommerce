@@ -58,7 +58,11 @@ fi
 
 # 2. Motifs : clé sensible suivie d'une valeur littérale. Sert de repli sans gitleaks,
 #    et couvre toujours les fichiers que la commande va indexer elle-même.
-RE="(password|passwd|pwd|secret|token|api[_-]?key|connectionstring)[\"']?[[:space:]]*[:=][[:space:]]*[\"']?[^\"'[:space:],;{}]{4,}"
+#    Une valeur qui commence par $ ou ? est une RÉFÉRENCE, pas un secret : ${VAR}, $(commande),
+#    ou le ${VAR:?message} de compose (qui exige la variable).
+#    LIMITE CONNUE : un vrai mot de passe qui commencerait par $ ou ? n'est plus détecté ici.
+#    gitleaks (utilisé s'il est installé) n'a pas cette limite.
+RE="(password|passwd|pwd|secret|token|api[_-]?key|connectionstring)[\"']?[[:space:]]*[:=][[:space:]]*[\"']?[^\"'[:space:],;{}\$?][^\"'[:space:],;{}]{3,}"
 KEY='BEGIN (RSA |OPENSSH |EC |DSA )?PRIVATE KEY'
 # Valeurs factices courantes : ${VAR}, <placeholder>, changeme, example.
 PLACEHOLDER='\$\{[A-Za-z_]+\}|<[a-z-]+>|changeme|example'
@@ -69,7 +73,10 @@ fi
 
 # 3. Fichiers sensibles par leur nom, quel que soit leur contenu.
 names="$(git diff --cached --name-only; $scan_worktree && git ls-files --others --exclude-standard)"
-bad_names="$(printf '%s\n' "$names" | grep -iE '(^|/)\.env(\..*)?$|\.(pem|key|pfx|p12)$' | sort -u)"
+# Les MODÈLES versionnés exprès (.env.example, .env.sample, .env.template) ne contiennent pas de
+# valeur : leur contenu reste analysé par les motifs ci-dessus, seul leur nom est accepté.
+bad_names="$(printf '%s\n' "$names" | grep -iE '(^|/)\.env(\..*)?$|\.(pem|key|pfx|p12)$' \
+              | grep -viE '(^|/)\.env\.(example|sample|template)$' | sort -u)"
 [ -n "$bad_names" ] && found="$found"$'\n'"$bad_names"
 
 found="$(printf '%s\n' "$found" | sed '/^$/d' | sort -u)"

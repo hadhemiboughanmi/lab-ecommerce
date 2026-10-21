@@ -1,0 +1,52 @@
+# Images — construit chaque image, vérifie qu'elle ne tourne pas en root, et la scanne.
+# BLOQUANT : une image root ou une vulnérabilité CRITICAL corrigeable fait échouer le job.
+# En CI, une procédure d'équipe existe pour lever un blocage ; sur le poste, le hook
+# scan-image ne fait qu'informer.
+name: Images
+
+on:
+  pull_request:
+    branches: [main]
+    paths: ['src/**', '.dockerignore', 'docker-compose.yml', '.github/workflows/images.yml']
+  push:
+    branches: [main]
+
+# Moindre privilège : lire le code, rien d'autre.
+permissions:
+  contents: read
+
+jobs:
+  build-scan:
+    name: Image ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false          # le rapport de TOUS les services, pas seulement du premier qui casse
+      matrix:
+        service: [Catalog.Api, Ordering.Api, Gateway, Web]
+    env:
+      IMAGE: scan-target:${{ github.sha }}
+      DOCKERFILE: src/ECommerce.${{ matrix.service }}/Dockerfile
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      # Contexte de build = racine du dépôt : les COPY des Dockerfiles commencent par src/.
+      - name: Construire l'image
+        run: docker build -t "$IMAGE" -f "$DOCKERFILE" .
+
+      - name: Vérifier l'exécution non-root
+        run: |
+          user="$(docker inspect --format '{{.Config.User}}' "$IMAGE")"
+          echo "Utilisateur de l'image : '$user'"
+          if [ -z "$user" ] || [ "$user" = "0" ] || [ "$user" = "root" ]; then
+            echo "::error::L'image s'exécute en root."; exit 1
+          fi
+
+      # Trivy lancé depuis son image officielle, épinglée par DIGEST (immuable), plutôt que par une
+      # action tierce épinglée sur une étiquette : moins de code tiers, rien qui puisse changer
+      # sous nos pieds. Il lit l'image via le socket Docker du runner.
+      - name: Scanner l'image (Trivy, bloquant sur CRITICAL corrigeable)
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.76.0@sha256:2416d1f74045b57274df1a340eee6b510cacd73c66a6ccb8da092b117eb7d222 \
+            image --severity CRITICAL --ignore-unfixed --exit-code 1 --no-progress "$IMAGE"
