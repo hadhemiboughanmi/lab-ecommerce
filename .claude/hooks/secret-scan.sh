@@ -64,10 +64,22 @@ fi
 #    gitleaks (utilisé s'il est installé) n'a pas cette limite.
 RE="(password|passwd|pwd|secret|token|api[_-]?key|connectionstring)[\"']?[[:space:]]*[:=][[:space:]]*[\"']?[^\"'[:space:],;{}\$?][^\"'[:space:],;{}]{3,}"
 KEY='BEGIN (RSA |OPENSSH |EC |DSA )?PRIVATE KEY'
-# Valeurs factices courantes : ${VAR}, <placeholder>, changeme, example.
+# Valeurs qui ne sont jamais des secrets, EFFACÉES de la ligne avant la recherche (et non pas
+# la ligne entière écartée : sinon `"token":false` ou `example` placé à côté d'un vrai mot de
+# passe suffirait à le cacher) :
+#   - valeurs factices : ${VAR}, <placeholder>, changeme, example ;
+#   - valeurs booléennes ou vides, par exemple le réglage Kubernetes automountServiceAccountToken
+#     mis à false (il retire aux pods leur jeton d'accès à l'API).
 PLACEHOLDER='\$\{[A-Za-z_]+\}|<[a-z-]+>|changeme|example'
+# Le booléen doit être suivi d'un délimiteur (guillemet, espace, , ; # } ] ou fin de ligne) :
+# une valeur comme « on-xyz123 » commence par « on » mais n'est PAS un booléen, et reste analysée.
+BOOLEAN="(password|passwd|pwd|secret|token|api[_-]?key|connectionstring)[\"']?[[:space:]]*[:=][[:space:]]*[\"']?(true|false|null|yes|no|on|off)[\"']?([[:space:],;#}]|\\]|\$)"
 if ! command -v gitleaks >/dev/null 2>&1 || $scan_worktree; then
-  hits="$(grep -iE "$RE|$KEY" "${TMPDIR:-/tmp}/secret-scan.$$" | grep -viE "$PLACEHOLDER" | cut -f1 | sort -u)"
+  scan="${TMPDIR:-/tmp}/secret-scan.$$"
+  # Nettoyage du contenu seul (colonne 2), le nom de fichier (colonne 1) reste intact.
+  # \3 : le délimiteur qui suit le booléen est conservé.
+  cleaned="$(paste <(cut -f1 "$scan") <(cut -f2- "$scan" | sed -E "s/$BOOLEAN/\\3/Ig; s/$PLACEHOLDER//Ig"))"
+  hits="$(printf '%s\n' "$cleaned" | grep -iE "$RE|$KEY" | cut -f1 | sort -u)"
   [ -n "$hits" ] && found="$found"$'\n'"$hits"
 fi
 

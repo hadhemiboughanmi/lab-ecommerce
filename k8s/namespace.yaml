@@ -1,0 +1,5 @@
+# Namespace dédié à l'ecommerce-app : isole ses ressources dans le cluster.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ecommerce

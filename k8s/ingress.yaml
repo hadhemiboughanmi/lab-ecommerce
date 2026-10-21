@@ -1,0 +1,20 @@
+# Ingress : expose le frontend Web vers l'extérieur via Traefik (fourni par k3s).
+# Accès : http://ecommerce.localhost:8081 (le port 8081 vient de k3d-cluster.yaml).
+# Seul le frontend est exposé : la passerelle, les API et la base restent internes.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ecommerce
+  namespace: ecommerce
+spec:
+  rules:
+    - host: ecommerce.localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web
+                port:
+                  number: 8080
