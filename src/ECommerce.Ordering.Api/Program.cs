@@ -1,4 +1,5 @@
 using ECommerce.Ordering.Api.Data;
+using ECommerce.Ordering.Api.Diagnostics;
 using ECommerce.Ordering.Api.Endpoints;
 using ECommerce.Ordering.Api.Services;
 using Microsoft.EntityFrameworkCore;
@@ -20,6 +21,9 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 // service discovery + standard resilience handlers come from AddServiceDefaults.
 builder.Services.AddHttpClient<CatalogServiceClient>(client =>
     client.BaseAddress = new Uri("https+http://catalog"));
+
+// Business metrics and spans: orders created / rejected (with reason), amount, Catalog validation.
+builder.Services.AddSingleton<OrderingTelemetry>();
 
 var app = builder.Build();
 
